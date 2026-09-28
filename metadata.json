@@ -1,0 +1,6 @@
+{
+  "name": "Aura Artisan Decor & Gifts",
+  "description": "Bespoke handcrafted decorative gifts, secure personalized customer portal with real-time shipment tracking, multi-factor authentication, loyalty rewards, and AI gift concierge.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
