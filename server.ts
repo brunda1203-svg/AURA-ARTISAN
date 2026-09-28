@@ -30,8 +30,27 @@ if (apiKey) {
 }
 
 // Fallback intelligent responder for store support if API key is not present or offline
-function getIntelligentStoreFallback(prompt: string): string {
+function getIntelligentStoreFallback(prompt: string, knowledgeEntries: any[] = []): string {
   const p = prompt.toLowerCase();
+
+  // Search in dynamically trained website knowledge entries first
+  if (Array.isArray(knowledgeEntries) && knowledgeEntries.length > 0) {
+    const activeEntries = knowledgeEntries.filter((k) => k.active !== false);
+    for (const entry of activeEntries) {
+      // Check title match
+      if (entry.title && p.includes(entry.title.toLowerCase())) {
+        return entry.content;
+      }
+      // Check keywords match
+      if (Array.isArray(entry.keywords)) {
+        const hasKeyword = entry.keywords.some((kw: string) => kw && p.includes(kw.toLowerCase()));
+        if (hasKeyword) {
+          return entry.content;
+        }
+      }
+    }
+  }
+
   if (p.includes('bouquet') || p.includes('pipe cleaner') || p.includes('flower') || p.includes('tulip') || p.includes('sunflower')) {
     return "Our Everlasting Pipe Cleaner Flower Bouquets are sculpted entirely by hand using plush high-density chenille stems! They never wilt, feature realistic petal details, and come wrapped in scalloped floristry paper with cascading double-faced satin ribbons (lavender, blush pink, or golden honey).";
   }
@@ -56,38 +75,219 @@ function getIntelligentStoreFallback(prompt: string): string {
   if (p.includes('mfa') || p.includes('security') || p.includes('password') || p.includes('login')) {
     return "Your account is secured with multi-factor authentication (MFA). You can toggle SMS or Authenticator App verification anytime in your Profile Settings > Security tab for complete account protection.";
   }
-  return "Welcome to Aura Artisan Decor & Gifts Concierge! I can assist you with custom pipe cleaner flower bouquets, satin ribbon selections, birthday cards, luxury hampers, order tracking (#AG-94812), or loyalty rewards. How may I delight you today?";
+  return "Welcome to Aura Artisan Decor & Gifts Concierge! I am trained on our complete store catalog, handcrafted pipe cleaner bouquets, satin ribbons, birthday keepsakes, real-time shipment tracking, and customer policies. How may I assist you today?";
 }
 
-// Chat API Route
+// Default n8n Webhook URL provided by user
+const DEFAULT_N8N_WEBHOOK_URL = 'https://brunda12.app.n8n.cloud/webhook/84980e58-6360-483c-8653-ebe138d55463/chat';
+
+// Helper to extract reply text from various n8n response structures
+function extractN8nReply(data: any): string | null {
+  if (typeof data === 'string' && data.trim()) return data.trim();
+  if (data && typeof data === 'object') {
+    if (typeof data.output === 'string') return data.output;
+    if (typeof data.text === 'string') return data.text;
+    if (typeof data.response === 'string') return data.response;
+    if (typeof data.message === 'string') return data.message;
+    if (typeof data.reply === 'string') return data.reply;
+    if (Array.isArray(data) && data.length > 0) {
+      const first = data[0];
+      if (typeof first === 'string') return first;
+      if (first && typeof first === 'object') {
+        return first.output || first.text || first.response || first.message || null;
+      }
+    }
+  }
+  return null;
+}
+
+// In-memory store training knowledge fallback
+let serverTrainedKnowledge: any[] = [];
+
+// n8n Webhook Status Ping Endpoint
+app.post('/api/n8n/ping', async (req: Request, res: Response) => {
+  const webhookUrl = req.body?.webhookUrl || DEFAULT_N8N_WEBHOOK_URL;
+  try {
+    const testResp = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Instance-Id': '62510f6075903ef57bbcb956a51584b6260614a1776b4ae0a2c3f1b91bcd577f',
+      },
+      body: JSON.stringify({
+        action: 'ping',
+        chatInput: 'ping',
+        message: 'ping',
+        sessionId: 'ping-test',
+      }),
+    });
+
+    const status = testResp.status;
+    let data: any = null;
+    try {
+      data = await testResp.json();
+    } catch {
+      data = await testResp.text();
+    }
+
+    if (status === 200) {
+      return res.json({
+        status: 'active',
+        code: 200,
+        webhookUrl,
+        message: 'n8n webhook is online, active, and responding!',
+        sampleResponse: data,
+      });
+    }
+
+    if (status === 404 && data?.hint) {
+      return res.json({
+        status: 'inactive',
+        code: 404,
+        webhookUrl,
+        message: 'n8n webhook was reached successfully, but the workflow is inactive.',
+        hint: data.hint,
+      });
+    }
+
+    return res.json({
+      status: 'error',
+      code: status,
+      webhookUrl,
+      message: `n8n returned HTTP ${status}`,
+      details: data,
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      status: 'unreachable',
+      webhookUrl,
+      error: err?.message || 'Failed to reach n8n webhook',
+    });
+  }
+});
+
+// Chat API Route with n8n Webhook + trained website knowledge + Gemini
 app.post('/api/chat', async (req: Request, res: Response) => {
   try {
-    const { message, history } = req.body;
+    const {
+      message,
+      history,
+      customKnowledge,
+      useN8n = true,
+      n8nWebhookUrl = DEFAULT_N8N_WEBHOOK_URL,
+      sessionId = 'aura-visitor-session',
+    } = req.body;
 
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'Message is required' });
     }
 
+    const effectiveKnowledge = (Array.isArray(customKnowledge) && customKnowledge.length > 0)
+      ? customKnowledge
+      : serverTrainedKnowledge;
+
+    // 1. If n8n integration is requested or default, attempt n8n webhook first
+    if (useN8n && n8nWebhookUrl) {
+      try {
+        const n8nResp = await fetch(n8nWebhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Instance-Id': '62510f6075903ef57bbcb956a51584b6260614a1776b4ae0a2c3f1b91bcd577f',
+          },
+          body: JSON.stringify({
+            action: 'sendMessage',
+            chatInput: message,
+            message,
+            sessionId,
+            history: history || [],
+          }),
+        });
+
+        if (n8nResp.ok) {
+          const n8nData = await n8nResp.json().catch(() => n8nResp.text());
+          const n8nText = extractN8nReply(n8nData);
+          if (n8nText && n8nText !== 'Error in workflow') {
+            return res.json({
+              reply: n8nText,
+              source: 'n8n',
+              n8nStatus: 'connected',
+              webhookUrl: n8nWebhookUrl,
+            });
+          }
+          if (n8nText === 'Error in workflow' || n8nData?.message === 'Error in workflow') {
+            console.warn('n8n returned internal workflow error, falling back gracefully');
+            const fallbackReply = ai
+              ? null
+              : getIntelligentStoreFallback(message, effectiveKnowledge);
+
+            if (!ai) {
+              return res.json({
+                reply: fallbackReply,
+                source: 'knowledge-base',
+                n8nStatus: 'workflow_error',
+                n8nHint: 'Workflow reached, but an internal node in your n8n workflow encountered an error (check Executions in n8n Cloud).',
+                webhookUrl: n8nWebhookUrl,
+              });
+            }
+          }
+        } else if (n8nResp.status === 404) {
+          const n8nError = await n8nResp.json().catch(() => ({}));
+          console.warn('n8n webhook 404 (workflow inactive):', n8nError);
+          // Workflow is not toggled to Active in n8n yet; we gracefully inform or fallback
+          const fallbackReply = ai
+            ? null
+            : getIntelligentStoreFallback(message, effectiveKnowledge);
+
+          if (!ai) {
+            return res.json({
+              reply: fallbackReply,
+              source: 'knowledge-base',
+              n8nStatus: 'inactive',
+              n8nHint: n8nError?.hint || 'Workflow must be toggled to Active in n8n',
+              webhookUrl: n8nWebhookUrl,
+            });
+          }
+        }
+      } catch (n8nErr) {
+        console.warn('n8n webhook call failed, falling back:', n8nErr);
+      }
+    }
+
+    // 2. Fallback to Gemini 3.8 Flash with trained website knowledge
     if (!ai) {
-      const fallbackReply = getIntelligentStoreFallback(message);
-      return res.json({ reply: fallbackReply, source: 'knowledge-base' });
+      const fallbackReply = getIntelligentStoreFallback(message, effectiveKnowledge);
+      return res.json({
+        reply: fallbackReply,
+        source: 'knowledge-base',
+        trainedEntriesCount: effectiveKnowledge.length,
+        n8nStatus: useN8n ? 'fallback' : 'disabled',
+      });
+    }
+
+    // Format knowledge entries into grounding context
+    let knowledgeGrounding = '';
+    if (Array.isArray(effectiveKnowledge) && effectiveKnowledge.length > 0) {
+      const activeItems = effectiveKnowledge.filter((k) => k.active !== false);
+      knowledgeGrounding = activeItems
+        .map((k, idx) => `[STORE KNOWLEDGE TOPIC #${idx + 1}: ${k.title} (${k.category || 'General'})]\nKeywords: ${(k.keywords || []).join(', ')}\nTrained Store Information: ${k.content}`)
+        .join('\n\n');
     }
 
     const systemInstruction = `You are "Aura", the luxury customer service concierge and gift advisor for "Aura Artisan Decor & Gifts".
-Your brand specializes in:
-- Everlasting handcrafted pipe cleaner flower bouquets (tulips, sunflowers, peonies, lilies of the valley) tied with double-faced satin ribbons (lavender, blush pink, golden honey).
-- Botanical 3D pop-up floral birthday cards and pressed wildflower deckle-edge cards with wax seals.
-- Curated luxury birthday hampers and grand celebratory hampers with scented candles, keepsakes, and treats.
-- Handcrafted decorative home items: botanical glass cloches, carved alabaster vessels, brass celestial mobiles, and memory chests.
+Your responses MUST be grounded in and reflect the verified website training data provided below.
+
+=== STORE WEBSITE TRAINED KNOWLEDGE BASE ===
+${knowledgeGrounding || 'Default knowledge: Everlasting handcrafted pipe cleaner flower bouquets with satin ribbons, 3D botanical birthday cards, celebration hampers, live shipment tracking (#AG-94812), 30-day guarantee, promo code GIFT15.'}
+============================================
+
 Tone: Warm, elegant, courteous, highly helpful, and reassuring.
 Guidelines:
-1. Help customers choose the perfect decorative gift based on occasion (Birthday, Housewarming, Wedding, Anniversary, Appreciation).
-2. Answer questions about gift packaging: choice of lustrous satin ribbons or plush velvet ribbons, scalloped floristry wrap or luxury rigid gift boxes, and complimentary wax-sealed calligraphy message cards.
-3. Inform users they can track live shipments (e.g. sample tracking #AG-94812) in real-time in their personalized customer dashboard.
-4. Assist with loyalty rewards: Aura Rewards members earn 10 points per $1; mention active promo codes like 'GIFT15' (15% off) or 'HANDCRAFT25' ($25 off).
-5. Explain secure checkout and 2FA/MFA account protection (SMS OTP or Authenticator app).
-6. Return policy: 30-day satisfaction guarantee with immediate complimentary replacement for any shipping damages.
-Keep responses concise, conversational, and beautifully formatted with bullet points if recommending items.`;
+1. Always prioritize answers found directly in the trained website knowledge base above.
+2. If asked about custom products, pipe cleaner flowers, satin ribbons, birthday hampers, or tracking, answer accurately using the store facts.
+3. If asked about coupons, mention 'GIFT15' (15% off) or 'HANDCRAFT25' ($25 off).
+4. For tracking inquiries, mention they can track live shipments (e.g., #AG-94812) in real time under the "Live Shipments" tab in their dashboard.
+5. Keep responses concise, conversational, and beautifully formatted with bullet points if listing items.`;
 
     // Format previous turns for context
     let formattedContents = '';
@@ -107,21 +307,45 @@ Keep responses concise, conversational, and beautifully formatted with bullet po
         contents: formattedContents,
         config: {
           systemInstruction,
-          temperature: 0.7,
+          temperature: 0.6,
         },
       });
 
-      const reply = response.text || getIntelligentStoreFallback(message);
-      return res.json({ reply, source: 'gemini' });
+      const reply = response.text || getIntelligentStoreFallback(message, effectiveKnowledge);
+      return res.json({
+        reply,
+        source: 'gemini',
+        trainedEntriesCount: effectiveKnowledge.length,
+        n8nStatus: useN8n ? 'fallback' : 'disabled',
+      });
     } catch (genError) {
       console.warn('Gemini generateContent fallback:', genError);
-      const fallbackReply = getIntelligentStoreFallback(message);
-      return res.json({ reply: fallbackReply, source: 'knowledge-base' });
+      const fallbackReply = getIntelligentStoreFallback(message, effectiveKnowledge);
+      return res.json({
+        reply: fallbackReply,
+        source: 'knowledge-base',
+        trainedEntriesCount: effectiveKnowledge.length,
+        n8nStatus: useN8n ? 'fallback' : 'disabled',
+      });
     }
   } catch (error) {
     console.error('Chat error:', error);
     res.status(500).json({ error: 'Failed to process chat message' });
   }
+});
+
+// Knowledge API Routes to train and retrieve store data
+app.get('/api/knowledge', (_req: Request, res: Response) => {
+  res.json({ knowledge: serverTrainedKnowledge });
+});
+
+app.post('/api/knowledge/sync', (req: Request, res: Response) => {
+  const { entries } = req.body;
+  if (Array.isArray(entries)) {
+    serverTrainedKnowledge = entries;
+    return res.json({ success: true, count: serverTrainedKnowledge.length });
+  }
+  res.status(400).json({ error: 'Invalid entries array' });
 });
 
 // Health check endpoint

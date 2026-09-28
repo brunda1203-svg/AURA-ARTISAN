@@ -13,6 +13,8 @@ import { ProductModal } from './components/ProductModal';
 import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal } from './components/CheckoutModal';
 import { SupportChatbot } from './components/SupportChatbot';
+import { N8nOfficialWidget } from './components/N8nOfficialWidget';
+import { KnowledgeTrainingModal } from './components/KnowledgeTrainingModal';
 import { Footer } from './components/Footer';
 
 const AppContent: React.FC = () => {
@@ -42,6 +44,8 @@ const AppContent: React.FC = () => {
         onClose={() => setQuickViewProduct(null)}
       />
       <SupportChatbot />
+      <N8nOfficialWidget />
+      <KnowledgeTrainingModal />
     </div>
   );
 };

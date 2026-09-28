@@ -137,4 +137,25 @@ export interface ChatMessage {
   sender: 'user' | 'assistant';
   text: string;
   timestamp: string;
+  source?: 'n8n' | 'gemini' | 'knowledge-base';
+}
+
+export interface N8nConfig {
+  webhookUrl: string;
+  enabled: boolean;
+  sessionId: string;
+  lastStatus?: 'connected' | 'inactive' | 'error' | 'untested';
+  lastPingTime?: string;
+  errorMessage?: string;
+  widgetMode?: 'artisan' | 'n8n_native';
+}
+
+export interface KnowledgeEntry {
+  id: string;
+  category: 'Products & Craft' | 'Shipping & Delivery' | 'Returns & Guarantee' | 'Promotions & Discounts' | 'Custom Gifting & Cards' | 'Store Story & Atelier';
+  title: string;
+  keywords: string[];
+  content: string;
+  updatedAt: string;
+  active: boolean;
 }

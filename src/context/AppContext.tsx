@@ -9,6 +9,8 @@ import {
   NotificationItem,
   SecurityActivity,
   ChatMessage,
+  KnowledgeEntry,
+  N8nConfig,
 } from '../types';
 import {
   INITIAL_USER,
@@ -17,6 +19,7 @@ import {
   INITIAL_REWARDS,
   INITIAL_NOTIFICATIONS,
   INITIAL_SECURITY_ACTIVITIES,
+  INITIAL_KNOWLEDGE_BASE,
 } from '../data/mockData';
 
 interface AppContextType {
@@ -100,12 +103,23 @@ interface AppContextType {
   pushSettings: { shipments: boolean; promotions: boolean; security: boolean };
   updatePushSettings: (newSettings: Partial<{ shipments: boolean; promotions: boolean; security: boolean }>) => void;
 
-  // AI Chatbot
+  // AI Chatbot & Knowledge Base Training
   isChatOpen: boolean;
   setIsChatOpen: (open: boolean) => void;
   chatMessages: ChatMessage[];
   isChatLoading: boolean;
   sendChatMessage: (text: string) => Promise<void>;
+  knowledgeBase: KnowledgeEntry[];
+  isTrainingModalOpen: boolean;
+  setIsTrainingModalOpen: (open: boolean) => void;
+  addKnowledgeEntry: (entry: Omit<KnowledgeEntry, 'id' | 'updatedAt'>) => void;
+  updateKnowledgeEntry: (id: string, updated: Partial<KnowledgeEntry>) => void;
+  deleteKnowledgeEntry: (id: string) => void;
+  resetKnowledgeBase: () => void;
+  importWebsiteTrainingData: (rawText: string, title?: string, category?: KnowledgeEntry['category']) => void;
+  n8nConfig: N8nConfig;
+  updateN8nConfig: (newConfig: Partial<N8nConfig>) => void;
+  testN8nConnection: (url?: string) => Promise<{ status: string; message: string; hint?: string }>;
 
   // Security Logs
   securityLogs: SecurityActivity[];
@@ -113,8 +127,8 @@ interface AppContextType {
   // Navigation View
   activeView: 'store' | 'dashboard' | 'tracking' | 'rewards';
   setActiveView: (view: 'store' | 'dashboard' | 'tracking' | 'rewards') => void;
-  dashboardTab: 'overview' | 'shipments' | 'orders' | 'rewards' | 'profile' | 'security' | 'notifications';
-  setDashboardTab: (tab: 'overview' | 'shipments' | 'orders' | 'rewards' | 'profile' | 'security' | 'notifications') => void;
+  dashboardTab: 'overview' | 'shipments' | 'orders' | 'rewards' | 'profile' | 'security' | 'notifications' | 'ai-training';
+  setDashboardTab: (tab: 'overview' | 'shipments' | 'orders' | 'rewards' | 'profile' | 'security' | 'notifications' | 'ai-training') => void;
 
   // Modals
   isAuthModalOpen: boolean;
@@ -144,7 +158,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Navigation & Views
   const [activeView, setActiveView] = useState<'store' | 'dashboard' | 'tracking' | 'rewards'>('store');
   const [dashboardTab, setDashboardTab] = useState<
-    'overview' | 'shipments' | 'orders' | 'rewards' | 'profile' | 'security' | 'notifications'
+    'overview' | 'shipments' | 'orders' | 'rewards' | 'profile' | 'security' | 'notifications' | 'ai-training'
   >('overview');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
@@ -189,13 +203,159 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     security: true,
   });
 
-  // AI Chatbot
+  // AI Chatbot & Knowledge Base Training
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [isTrainingModalOpen, setIsTrainingModalOpen] = useState<boolean>(false);
+  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeEntry[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('aura_trained_knowledge');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.warn('Failed to load trained knowledge from storage:', e);
+      }
+    }
+    return INITIAL_KNOWLEDGE_BASE;
+  });
+
+  // Sync knowledge base to storage and server whenever changed
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('aura_trained_knowledge', JSON.stringify(knowledgeBase));
+      } catch (e) {
+        console.warn('Failed to save trained knowledge to storage:', e);
+      }
+    }
+    // Sync with backend API
+    fetch('/api/knowledge/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entries: knowledgeBase }),
+    }).catch(() => {});
+  }, [knowledgeBase]);
+
+  const addKnowledgeEntry = (entry: Omit<KnowledgeEntry, 'id' | 'updatedAt'>) => {
+    const newEntry: KnowledgeEntry = {
+      ...entry,
+      id: `kb_${Date.now()}`,
+      updatedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+    };
+    setKnowledgeBase((prev) => [newEntry, ...prev]);
+  };
+
+  const updateKnowledgeEntry = (id: string, updated: Partial<KnowledgeEntry>) => {
+    setKnowledgeBase((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              ...updated,
+              updatedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            }
+          : item
+      )
+    );
+  };
+
+  const deleteKnowledgeEntry = (id: string) => {
+    setKnowledgeBase((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const resetKnowledgeBase = () => {
+    setKnowledgeBase(INITIAL_KNOWLEDGE_BASE);
+  };
+
+  const importWebsiteTrainingData = (rawText: string, title?: string, category: KnowledgeEntry['category'] = 'Products & Craft') => {
+    if (!rawText.trim()) return;
+    const cleanTitle = title || `Custom Website Info - ${new Date().toLocaleDateString()}`;
+    const words = rawText
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .split(' ')
+      .filter((w) => w.length > 3)
+      .slice(0, 10);
+    const keywords = Array.from(new Set(words));
+    addKnowledgeEntry({
+      title: cleanTitle,
+      category,
+      keywords,
+      content: rawText.trim(),
+      active: true,
+    });
+  };
+
+  // n8n Webhook Chat Configuration
+  const [n8nConfig, setN8nConfig] = useState<N8nConfig>(() => {
+    const defaultUrl = 'https://brunda12.app.n8n.cloud/webhook/84980e58-6360-483c-8653-ebe138d55463/chat';
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('aura_n8n_config');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.warn('Failed to load n8n config from storage:', e);
+      }
+    }
+    return {
+      webhookUrl: defaultUrl,
+      enabled: true,
+      sessionId: `aura_session_${Math.random().toString(36).substring(2, 9)}`,
+      lastStatus: 'untested',
+    };
+  });
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('aura_n8n_config', JSON.stringify(n8nConfig));
+      } catch (e) {
+        console.warn('Failed to save n8n config:', e);
+      }
+    }
+  }, [n8nConfig]);
+
+  const updateN8nConfig = (newConfig: Partial<N8nConfig>) => {
+    setN8nConfig((prev) => ({ ...prev, ...newConfig }));
+  };
+
+  const testN8nConnection = async (url?: string) => {
+    const targetUrl = url || n8nConfig.webhookUrl;
+    try {
+      const res = await fetch('/api/n8n/ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webhookUrl: targetUrl }),
+      });
+      const data = await res.json();
+      const status = data.status === 'active' ? 'connected' : data.status === 'inactive' ? 'inactive' : 'error';
+      updateN8nConfig({
+        lastStatus: status,
+        lastPingTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        errorMessage: data.hint || data.message || undefined,
+      });
+      return {
+        status: data.status,
+        message: data.message,
+        hint: data.hint,
+      };
+    } catch (err: any) {
+      updateN8nConfig({
+        lastStatus: 'error',
+        lastPingTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        errorMessage: err?.message || 'Connection failed',
+      });
+      return {
+        status: 'error',
+        message: 'Could not contact n8n server',
+      };
+    }
+  };
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: 'msg_welcome',
       sender: 'assistant',
-      text: 'Greetings! I am Aura, your artisan gifting advisor. How can I assist you with gift selections, personalized calligraphy wrapping, or tracking your shipments today?',
+      text: 'Greetings! I am Aura, your artisan gifting advisor. I am trained on our complete website data, handcrafted pipe cleaner bouquets, satin ribbons, and live shipment tracking. How may I assist you today?',
       timestamp: 'Just now',
     },
   ]);
@@ -753,6 +913,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         body: JSON.stringify({
           message: text,
           history: chatMessages.slice(-6).map((m) => ({ sender: m.sender, text: m.text })),
+          customKnowledge: knowledgeBase,
+          useN8n: n8nConfig.enabled,
+          n8nWebhookUrl: n8nConfig.webhookUrl,
+          sessionId: n8nConfig.sessionId,
         }),
       });
 
@@ -761,25 +925,48 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
 
       const data = await response.json();
+
+      if (data.source === 'n8n') {
+        updateN8nConfig({ lastStatus: 'connected', lastPingTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
+      } else if (data.n8nStatus === 'inactive') {
+        updateN8nConfig({ lastStatus: 'inactive', errorMessage: data.n8nHint || 'Workflow is inactive in n8n' });
+      }
+
       const botMsg: ChatMessage = {
         id: `bot_${Date.now()}`,
         sender: 'assistant',
         text: data.reply || 'I am delighted to help with your gifting selections.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        source: data.source || (n8nConfig.enabled ? 'n8n' : 'gemini'),
       };
 
       setChatMessages((prev) => [...prev, botMsg]);
     } catch (err) {
       console.warn('Chat request failed, using intelligent client fallback:', err);
-      // Fallback
-      let fallback = "I'm here to assist with any questions about our decorative gifts, shipment tracking (#AG-94812), loyalty points, or gift packaging!";
+      // Check trained knowledge base first
       const lower = text.toLowerCase();
-      if (lower.includes('track') || lower.includes('order')) {
-        fallback = "You can track your real-time shipment status under the 'Live Shipments' tab in your Dashboard. Order #AG-94812 is currently in transit with FedEx Artisan Express!";
-      } else if (lower.includes('wrap') || lower.includes('box')) {
-        fallback = "Each gift item is cradled in our signature velvet keepsake box, wrapped in handmade mulberry paper, and tied with your choice of emerald or champagne velvet ribbon.";
-      } else if (lower.includes('discount') || lower.includes('code')) {
-        fallback = "Use promo code 'GIFT15' for 15% off at checkout, or check your Loyalty Rewards tab to redeem points for $25 and $50 atelier credits!";
+      let matchedContent: string | null = null;
+
+      for (const entry of knowledgeBase.filter((k) => k.active)) {
+        if (entry.title && lower.includes(entry.title.toLowerCase())) {
+          matchedContent = entry.content;
+          break;
+        }
+        if (entry.keywords && entry.keywords.some((kw) => kw && lower.includes(kw.toLowerCase()))) {
+          matchedContent = entry.content;
+          break;
+        }
+      }
+
+      let fallback = matchedContent || "I'm here to assist with any questions about our decorative gifts, shipment tracking (#AG-94812), loyalty points, or gift packaging!";
+      if (!matchedContent) {
+        if (lower.includes('track') || lower.includes('order')) {
+          fallback = "You can track your real-time shipment status under the 'Live Shipments' tab in your Dashboard. Order #AG-94812 is currently in transit with FedEx Artisan Express!";
+        } else if (lower.includes('wrap') || lower.includes('box')) {
+          fallback = "Each gift item is cradled in our signature velvet keepsake box, wrapped in handmade mulberry paper, and tied with your choice of emerald or champagne velvet ribbon.";
+        } else if (lower.includes('discount') || lower.includes('code')) {
+          fallback = "Use promo code 'GIFT15' for 15% off at checkout, or check your Loyalty Rewards tab to redeem points for $25 and $50 atelier credits!";
+        }
       }
 
       const botMsg: ChatMessage = {
@@ -856,6 +1043,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         chatMessages,
         isChatLoading,
         sendChatMessage,
+        knowledgeBase,
+        isTrainingModalOpen,
+        setIsTrainingModalOpen,
+        addKnowledgeEntry,
+        updateKnowledgeEntry,
+        deleteKnowledgeEntry,
+        resetKnowledgeBase,
+        importWebsiteTrainingData,
+        n8nConfig,
+        updateN8nConfig,
+        testN8nConnection,
 
         securityLogs,
 

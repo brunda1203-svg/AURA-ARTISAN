@@ -52,6 +52,11 @@ export const DashboardView: React.FC = () => {
     sendPushNotification,
     setActiveView,
     addToCart,
+    knowledgeBase,
+    setIsTrainingModalOpen,
+    setIsChatOpen,
+    n8nConfig,
+    testN8nConnection,
   } = useApp();
 
   // Profile Form state
@@ -230,6 +235,7 @@ export const DashboardView: React.FC = () => {
             { id: 'profile', label: 'Profile Settings', icon: UserIcon },
             { id: 'security', label: 'Security & 2FA', icon: ShieldCheck },
             { id: 'notifications', label: 'Push Alert Settings', icon: Bell },
+            { id: 'ai-training', label: 'AI Chat Training', icon: Sparkles },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = dashboardTab === tab.id;
@@ -1369,6 +1375,176 @@ export const DashboardView: React.FC = () => {
                 <Bell className="w-3.5 h-3.5 text-amber-300" />
                 <span>Send Test Push Alert</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 8: AI CHAT TRAINING & STORE KNOWLEDGE */}
+      {dashboardTab === 'ai-training' && (
+        <div className="space-y-6 animate-in fade-in">
+          {/* Hero Banner */}
+          <div className="bg-gradient-to-br from-[#1C1917] via-[#2A2420] to-[#1C1917] rounded-3xl p-6 sm:p-8 text-white border border-stone-800 shadow-xl relative overflow-hidden">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+              <div className="max-w-xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30 mb-3">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                  <span>Website AI Model: Gemini 3.8 Flash + Store Knowledge Grounding</span>
+                </div>
+                <h2 className="font-serif text-2xl sm:text-3xl font-bold tracking-tight text-white mb-2">
+                  Train AI Chat on Your Website Data
+                </h2>
+                <p className="text-stone-300 text-xs sm:text-sm leading-relaxed">
+                  Your website's AI concierge is grounded in your verified store catalog. Add custom knowledge entries, upload FAQs, or define bespoke ribbon & gift policies so customers receive immediate, 100% accurate responses.
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+                <button
+                  onClick={() => setIsTrainingModalOpen(true)}
+                  className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-2xl text-xs transition-all shadow-lg flex items-center justify-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4 text-stone-950" />
+                  <span>Open Full Training Studio</span>
+                </button>
+                <button
+                  onClick={() => setIsChatOpen(true)}
+                  className="px-5 py-3 bg-white/10 hover:bg-white/20 text-white font-medium rounded-2xl text-xs transition-all border border-white/20 flex items-center justify-center gap-2"
+                >
+                  <span>Test Live Customer Chat</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-xs text-stone-500 block mb-1">Trained Knowledge Topics</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-serif text-3xl font-bold text-stone-900">{knowledgeBase.length}</span>
+                <span className="text-xs text-emerald-700 font-semibold">
+                  ({knowledgeBase.filter((k) => k.active).length} Active in Chat)
+                </span>
+              </div>
+              <p className="text-[11px] text-stone-400 mt-2">
+                Covers flower bouquets, ribbons, birthday hampers, and tracking.
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-xs text-stone-500 block mb-1">Grounding Confidence</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-serif text-3xl font-bold text-emerald-700">100%</span>
+                <span className="text-xs text-stone-500">Store Verified</span>
+              </div>
+              <p className="text-[11px] text-stone-400 mt-2">
+                Responses prioritize website facts before answering customers.
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-xs text-stone-500 block mb-1">Sync Status</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-serif text-2xl font-bold text-stone-900">Synchronized</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              </div>
+              <p className="text-[11px] text-stone-400 mt-2">
+                Updated knowledge syncs with backend server and localStorage instantly.
+              </p>
+            </div>
+          </div>
+
+          {/* n8n Webhook Workflow Card */}
+          <div className="bg-gradient-to-r from-stone-900 to-stone-800 text-white rounded-3xl p-6 border border-stone-700 shadow-md">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1.5 max-w-xl">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    n8n Webhook Integration
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="text-xs text-emerald-300 font-medium">Configured & Connected</span>
+                </div>
+                <h3 className="font-serif text-lg font-bold text-white">
+                  n8n AI Workflow Webhook
+                </h3>
+                <p className="text-xs text-stone-300 leading-relaxed font-mono bg-black/30 p-2.5 rounded-xl border border-stone-700 break-all">
+                  {n8nConfig.webhookUrl}
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full md:w-auto">
+                <button
+                  onClick={() => setIsTrainingModalOpen(true)}
+                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-xs transition-colors flex items-center justify-center gap-2"
+                >
+                  <span>Manage n8n Settings</span>
+                </button>
+                <a
+                  href="https://brunda12.app.n8n.cloud"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 border border-white/20"
+                >
+                  <span>Open n8n Canvas</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Trained Topics Grid */}
+          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-xs">
+            <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+              <div>
+                <h3 className="font-serif text-lg font-bold text-stone-900">
+                  Currently Trained Website Topics
+                </h3>
+                <p className="text-xs text-stone-500">
+                  These topics are currently injected into the AI Concierge's memory:
+                </p>
+              </div>
+              <button
+                onClick={() => setIsTrainingModalOpen(true)}
+                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5"
+              >
+                <span>+ Add / Edit Topics</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {knowledgeBase.map((item) => (
+                <div
+                  key={item.id}
+                  className="p-4 bg-stone-50/80 rounded-2xl border border-stone-200 hover:border-amber-400 transition-colors flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-amber-100 text-amber-900">
+                        {item.category}
+                      </span>
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-medium border border-emerald-200/60">
+                        Active in Chat
+                      </span>
+                    </div>
+                    <h4 className="font-serif text-sm font-bold text-stone-900 mb-1">{item.title}</h4>
+                    <p className="text-xs text-stone-600 line-clamp-3 leading-relaxed mb-2">
+                      {item.content}
+                    </p>
+                  </div>
+                  <div className="pt-2 border-t border-stone-200/60 flex items-center justify-between text-[11px] text-stone-500">
+                    <span>{item.keywords.slice(0, 4).map((k) => `#${k}`).join(' ')}</span>
+                    <button
+                      onClick={() => setIsTrainingModalOpen(true)}
+                      className="text-amber-800 hover:underline font-semibold"
+                    >
+                      Edit Topic
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

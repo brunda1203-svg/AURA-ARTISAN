@@ -35,6 +35,8 @@ export const Navbar: React.FC = () => {
     setSearchQuery,
     pushPermission,
     requestPushPermission,
+    setIsTrainingModalOpen,
+    setIsChatOpen,
   } = useApp();
 
   const [isNotifOpen, setIsNotifOpen] = useState(false);
@@ -157,6 +159,14 @@ export const Navbar: React.FC = () => {
               }`}
             >
               Personalized Dashboard
+            </button>
+            <button
+              onClick={() => setIsTrainingModalOpen(true)}
+              className="text-xs tracking-wide text-amber-900 bg-amber-100/70 hover:bg-amber-200/80 px-2.5 py-1.5 rounded-full font-semibold transition-colors flex items-center gap-1.5 border border-amber-300/80 shadow-xs"
+              title="Train chatbot on your website products, cards, and policies"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-700" />
+              <span>Train AI Chat</span>
             </button>
           </nav>
 
