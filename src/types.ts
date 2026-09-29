@@ -1,10 +1,18 @@
 export interface UserAddress {
   street: string;
   apartment?: string;
+  flatNo?: string;
+  areaStreet?: string;
+  landmark?: string;
   city: string;
   state: string;
   postalCode: string;
+  pincode?: string;
   country: string;
+  deliverySlot?: string;
+  deliveryDate?: string;
+  phone?: string;
+  altPhone?: string;
 }
 
 export interface User {
@@ -30,10 +38,19 @@ export interface User {
   };
 }
 
+export type ProductCategory =
+  | 'Pipe Cleaner Bouquets'
+  | 'Chocolate Bouquets'
+  | 'Satin Ribbon Bouquets'
+  | 'Photo Frames & Keepsakes'
+  | 'Polaroid Sets'
+  | 'Accessory & Charm Bouquets'
+  | 'Gift Hampers';
+
 export interface Product {
   id: string;
   name: string;
-  category: 'Pipe Cleaner Bouquets' | 'Gift Hampers' | 'Birthday Cards & Keepsakes' | 'Keepsake Vessels' | 'Botanical & Glass' | 'Candles & Scents' | 'Brass & Metalcraft';
+  category: ProductCategory;
   price: number;
   originalPrice?: number;
   rating: number;
@@ -48,6 +65,17 @@ export interface Product {
   inStock: boolean;
   featured?: boolean;
   tags: string[];
+  deliveryEstimateDays?: string;
+}
+
+export interface Coupon {
+  code: string;
+  title: string;
+  description: string;
+  discountType: 'percentage' | 'flat' | 'free_shipping';
+  discountValue: number;
+  minOrderValue: number;
+  tag?: string;
 }
 
 export interface CartItem {
@@ -90,11 +118,24 @@ export interface Order {
   items: CartItem[];
   shippingAddress: UserAddress;
   recipientName: string;
-  carrier: 'FedEx Artisan Luxury Express' | 'DHL Heritage Freight' | 'White Glove Courier';
+  carrier: 'Blue Dart Express (India)' | 'DTDC Premium' | 'Delhivery Express' | 'Artisan White Glove Delivery' | string;
   trackingNumber: string;
   estimatedDelivery: string;
+  deliverySlot?: string;
   trackingEvents: TrackingEvent[];
-  paymentMethod: 'Credit Card (3D Secure)' | 'Apple Pay' | 'Google Pay' | 'Instant Bank / UPI';
+  paymentMethod:
+    | 'UPI (GPay / PhonePe / Paytm / BHIM)'
+    | 'UPI QR Code (Scan & Pay)'
+    | 'Cash on Delivery (COD)'
+    | 'Net Banking (All Indian Banks)'
+    | 'Credit / Debit Card (RuPay / Visa / MC)'
+    | 'Credit Card (3D Secure)'
+    | 'Apple Pay'
+    | 'Google Pay'
+    | 'Instant Bank / UPI'
+    | string;
+  upiId?: string;
+  couponCode?: string;
   cardLastFour?: string;
   receiptUrl?: string;
 }

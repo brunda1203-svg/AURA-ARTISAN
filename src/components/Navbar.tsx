@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Sparkles,
+  Heart,
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
@@ -24,6 +25,8 @@ export const Navbar: React.FC = () => {
     setAuthModalMode,
     cart,
     setIsCartOpen,
+    wishlist,
+    setIsWishlistOpen,
     activeView,
     setActiveView,
     setDashboardTab,
@@ -51,12 +54,12 @@ export const Navbar: React.FC = () => {
       <div className="bg-[#1C1917] text-[#FAF8F5] text-xs py-1.5 px-4 text-center tracking-wide flex items-center justify-center gap-3">
         <span className="flex items-center gap-1.5 text-amber-200 font-medium">
           <Sparkles className="w-3.5 h-3.5" />
-          <span>Aura Rewards: Use code</span>
-          <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-amber-300">GIFT15</span>
-          <span>for 15% off handcrafted decor</span>
+          <span>🇮🇳 All-India Express Delivery • Handcrafted Bouquets & Keepsakes • Use Code</span>
+          <span className="font-mono bg-white/10 px-1.5 py-0.5 rounded text-amber-300">AURA10</span>
+          <span>for 10% OFF</span>
         </span>
         <span className="hidden md:inline text-stone-500">|</span>
-        <span className="hidden md:inline text-stone-300">Complimentary velvet gift box & wax-sealed card on all orders</span>
+        <span className="hidden md:inline text-stone-300">Instant UPI & COD Accepted Across India</span>
       </div>
 
       {/* Main Navigation Bar */}
@@ -282,6 +285,21 @@ export const Navbar: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* Wishlist Button */}
+            <button
+              onClick={() => setIsWishlistOpen(true)}
+              className="p-2 text-stone-700 hover:text-rose-600 relative rounded-full hover:bg-rose-50/60 transition-colors focus:outline-none"
+              title="View Wishlist"
+              aria-label="View Wishlist"
+            >
+              <Heart className="w-5 h-5 text-stone-700 hover:text-rose-600" />
+              {wishlist.length > 0 && (
+                <span className="absolute top-1 right-1 w-4 h-4 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-xs">
+                  {wishlist.length}
+                </span>
+              )}
+            </button>
 
             {/* Shopping Cart Button */}
             <button

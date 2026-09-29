@@ -11,6 +11,7 @@ import {
   ChatMessage,
   KnowledgeEntry,
   N8nConfig,
+  Coupon,
 } from '../types';
 import {
   INITIAL_USER,
@@ -21,6 +22,7 @@ import {
   INITIAL_SECURITY_ACTIVITIES,
   INITIAL_KNOWLEDGE_BASE,
 } from '../data/mockData';
+import { lookupIndianPincode, AVAILABLE_COUPONS } from '../data/indianData';
 
 interface AppContextType {
   // Authentication & MFA
@@ -39,12 +41,21 @@ interface AppContextType {
   updatePassword: (oldPass: string, newPass: string) => { success: boolean; message: string };
   demoLogin: () => void;
 
-  // Products
+  // Products & Currency
   products: Product[];
   selectedCategory: string;
   setSelectedCategory: (cat: string) => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+  formatPrice: (amount: number) => string;
+
+  // Wishlist
+  wishlist: string[];
+  isWishlistOpen: boolean;
+  setIsWishlistOpen: (open: boolean) => void;
+  toggleWishlist: (productId: string) => void;
+  removeFromWishlist: (productId: string) => void;
+  isInWishlist: (productId: string) => boolean;
 
   // Cart
   cart: CartItem[];
@@ -68,6 +79,22 @@ interface AppContextType {
   cartDiscount: number;
   cartTotal: number;
 
+  // Delivery Slots & Pincode Checking
+  deliveryPincode: string;
+  setDeliveryPincode: (pin: string) => void;
+  selectedDeliverySlot: string;
+  setSelectedDeliverySlot: (slot: string) => void;
+  deliveryDate: string;
+  setDeliveryDate: (d: string) => void;
+  checkPincode: (pin: string) => {
+    valid: boolean;
+    city: string;
+    state: string;
+    deliveryDays: string;
+    expressAvailable: boolean;
+    hub: string;
+  };
+
   // Orders & Real-time Tracking
   orders: Order[];
   activeTrackingOrder: Order | null;
@@ -75,14 +102,27 @@ interface AppContextType {
   advanceTrackingSimulation: (orderId: string) => void;
   placeOrder: (details: {
     recipientName: string;
-    shippingAddress: User['shippingAddress'];
-    paymentMethod: 'Credit Card (3D Secure)' | 'Apple Pay' | 'Google Pay' | 'Instant Bank / UPI';
+    phone?: string;
+    altPhone?: string;
+    flatNo?: string;
+    areaStreet?: string;
+    landmark?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    deliverySlot?: string;
+    deliveryDate?: string;
+    shippingAddress?: User['shippingAddress'];
+    paymentMethod: string;
+    upiId?: string;
     cardNumber?: string;
   }) => Order;
 
-  // Loyalty & Rewards
+  // Loyalty & Rewards & Coupons
   loyaltyRewards: LoyaltyReward[];
   activeCoupon: LoyaltyReward | null;
+  appliedCoupon: Coupon | null;
+  availableCoupons: Coupon[];
   applyCoupon: (code: string) => { success: boolean; message: string };
   removeCoupon: () => void;
   redeemReward: (rewardId: string) => { success: boolean; message: string };
@@ -178,11 +218,69 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       giftWrapType: 'Signature Velvet Box',
       ribbonColor: 'Emerald Velvet',
       waxSeal: true,
-      giftCardMessage: 'To new beginnings and warm hearths. With all my love.',
+      giftCardMessage: 'Happy Birthday! May your day sparkle with joy and handmade beauty.',
       recipientName: 'Brunda M.',
     },
   ]);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
+
+  // Wishlist
+  const [wishlist, setWishlist] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('aura_wishlist');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.warn('Failed to load wishlist:', e);
+      }
+    }
+    return [INITIAL_PRODUCTS[0].id, INITIAL_PRODUCTS[2].id];
+  });
+  const [isWishlistOpen, setIsWishlistOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('aura_wishlist', JSON.stringify(wishlist));
+      } catch (e) {
+        console.warn('Failed to save wishlist:', e);
+      }
+    }
+  }, [wishlist]);
+
+  const toggleWishlist = (productId: string) => {
+    setWishlist((prev) => {
+      if (prev.includes(productId)) {
+        return prev.filter((id) => id !== productId);
+      } else {
+        return [...prev, productId];
+      }
+    });
+  };
+
+  const removeFromWishlist = (productId: string) => {
+    setWishlist((prev) => prev.filter((id) => id !== productId));
+  };
+
+  const isInWishlist = (productId: string) => wishlist.includes(productId);
+
+  // Currency Formatter (₹ INR)
+  const formatPrice = (amount: number) => {
+    return `₹${Math.round(amount).toLocaleString('en-IN')}`;
+  };
+
+  // Delivery Slots & Pincode Checking
+  const [deliveryPincode, setDeliveryPincode] = useState<string>('560038');
+  const [selectedDeliverySlot, setSelectedDeliverySlot] = useState<string>('Evening Delivery (5:00 PM – 8:00 PM)');
+  const [deliveryDate, setDeliveryDate] = useState<string>('Tomorrow, Evening Slot');
+
+  const checkPincode = (pin: string) => {
+    return lookupIndianPincode(pin);
+  };
+
+  // Coupons
+  const [availableCoupons] = useState<Coupon[]>(AVAILABLE_COUPONS);
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(AVAILABLE_COUPONS[0]); // AURA10 active by default
 
   // Orders & Shipments
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
@@ -442,11 +540,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Cart Calculations
   const cartSubtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
 
-  const cartDiscount = activeCoupon
-    ? activeCoupon.code === 'GIFT15'
-      ? Math.round(cartSubtotal * 0.15 * 100) / 100
-      : activeCoupon.code === 'HANDCRAFT25' && cartSubtotal >= 120
-      ? 25
+  const cartDiscount = appliedCoupon
+    ? appliedCoupon.discountType === 'percentage'
+      ? Math.round((cartSubtotal * appliedCoupon.discountValue) / 100)
+      : appliedCoupon.discountType === 'flat'
+      ? appliedCoupon.discountValue
+      : appliedCoupon.discountType === 'free_shipping'
+      ? 99
+      : 0
+    : activeCoupon
+    ? activeCoupon.code === 'ARTISAN150' && cartSubtotal >= 899
+      ? 150
+      : activeCoupon.code === 'CONNOISSEUR300' && cartSubtotal >= 1499
+      ? 300
+      : activeCoupon.code === 'PLATINUM500' && cartSubtotal >= 2200
+      ? 500
       : 0
     : 0;
 
@@ -686,21 +794,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Coupons & Loyalty
   const applyCoupon = (code: string) => {
-    const found = loyaltyRewards.find((r) => r.code.toUpperCase() === code.trim().toUpperCase());
-    if (!found) {
-      return { success: false, message: 'Coupon code not found or expired.' };
+    const clean = code.trim().toUpperCase();
+
+    // Check available promotional coupons
+    const couponMatch = availableCoupons.find((c) => c.code.toUpperCase() === clean);
+    if (couponMatch) {
+      if (cartSubtotal < couponMatch.minOrderValue) {
+        return {
+          success: false,
+          message: `Coupon ${couponMatch.code} requires a minimum order of ₹${couponMatch.minOrderValue}. (Current: ₹${cartSubtotal})`,
+        };
+      }
+      setAppliedCoupon(couponMatch);
+      setActiveCoupon(null);
+      sendPushNotification(
+        `Coupon Applied: ${couponMatch.code}`,
+        `You unlocked ${couponMatch.title}!`,
+        'promo',
+        { promoCode: couponMatch.code }
+      );
+      return { success: true, message: `Success! ${couponMatch.title} applied.` };
     }
-    if (cartSubtotal < found.minSpend) {
-      return {
-        success: false,
-        message: `This coupon requires a minimum spend of $${found.minSpend}. (Current: $${cartSubtotal})`,
-      };
+
+    // Check loyalty rewards vouchers
+    const found = loyaltyRewards.find((r) => r.code.toUpperCase() === clean);
+    if (found) {
+      if (cartSubtotal < found.minSpend) {
+        return {
+          success: false,
+          message: `This voucher requires a minimum spend of ₹${found.minSpend}. (Current: ₹${cartSubtotal})`,
+        };
+      }
+      setActiveCoupon(found);
+      setAppliedCoupon(null);
+      return { success: true, message: `Voucher ${found.code} applied: ${found.discountDisplay}!` };
     }
-    setActiveCoupon(found);
-    return { success: true, message: `Coupon ${found.code} applied: ${found.discountDisplay}!` };
+
+    return { success: false, message: 'Invalid or expired coupon code. Try AURA10 or FIRSTGIFT.' };
   };
 
-  const removeCoupon = () => setActiveCoupon(null);
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setActiveCoupon(null);
+  };
 
   const redeemReward = (rewardId: string) => {
     if (!user) return { success: false, message: 'Please log in to redeem points.' };
@@ -787,82 +923,112 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // Checkout & Place Order
   const placeOrder = (details: {
     recipientName: string;
-    shippingAddress: User['shippingAddress'];
-    paymentMethod: 'Credit Card (3D Secure)' | 'Apple Pay' | 'Google Pay' | 'Instant Bank / UPI';
+    phone?: string;
+    altPhone?: string;
+    flatNo?: string;
+    areaStreet?: string;
+    landmark?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    deliverySlot?: string;
+    deliveryDate?: string;
+    shippingAddress?: User['shippingAddress'];
+    paymentMethod: string;
+    upiId?: string;
     cardNumber?: string;
   }): Order => {
-    const orderNum = `AG-${Math.floor(10000 + Math.random() * 90000)}`;
-    const pointsEarned = Math.round(cartTotal * 10);
+    const orderNum = `AUR-IN-${Math.floor(1000 + Math.random() * 9000)}`;
+    const pointsEarned = Math.round(cartTotal * 0.1);
+
+    const fullShippingAddress: User['shippingAddress'] = details.shippingAddress || {
+      street: details.areaStreet || user?.shippingAddress.street || '#42, 3rd Cross, Indiranagar',
+      flatNo: details.flatNo || user?.shippingAddress.flatNo || 'Flat 302',
+      areaStreet: details.areaStreet || user?.shippingAddress.areaStreet || '100ft Road, Indiranagar',
+      landmark: details.landmark || user?.shippingAddress.landmark || 'Near Metro Station',
+      city: details.city || user?.shippingAddress.city || 'Bengaluru',
+      state: details.state || user?.shippingAddress.state || 'Karnataka',
+      postalCode: details.pincode || user?.shippingAddress.postalCode || '560038',
+      pincode: details.pincode || user?.shippingAddress.pincode || '560038',
+      country: 'India',
+      deliverySlot: details.deliverySlot || selectedDeliverySlot,
+      deliveryDate: details.deliveryDate || deliveryDate,
+      phone: details.phone || user?.phone || '+91 98765 43210',
+      altPhone: details.altPhone,
+    };
 
     const newOrder: Order = {
       id: `ord_${Date.now()}`,
       orderNumber: orderNum,
-      date: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      date: new Date().toLocaleDateString('en-IN', { month: 'long', day: 'numeric', year: 'numeric' }),
       status: 'Order Placed',
       subtotal: cartSubtotal,
       discount: cartDiscount,
       shippingCost: 0,
       total: cartTotal,
+      couponCode: appliedCoupon?.code || activeCoupon?.code,
       items: [...cart],
-      shippingAddress: details.shippingAddress,
-      recipientName: details.recipientName,
-      carrier: 'FedEx Artisan Luxury Express',
-      trackingNumber: `7948-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}-FX`,
-      estimatedDelivery: 'In 2-3 business days',
+      shippingAddress: fullShippingAddress,
+      recipientName: details.recipientName || user?.fullName || 'Valued Recipient',
+      carrier: 'Blue Dart Express (India)',
+      trackingNumber: `BD-IN-${Math.floor(10000000 + Math.random() * 90000000)}`,
+      estimatedDelivery: `${details.deliveryDate || deliveryDate}, ${details.deliverySlot || selectedDeliverySlot}`,
+      deliverySlot: details.deliverySlot || selectedDeliverySlot,
       paymentMethod: details.paymentMethod,
-      cardLastFour: details.cardNumber ? details.cardNumber.slice(-4) : '4242',
+      upiId: details.upiId,
+      cardLastFour: details.cardNumber ? details.cardNumber.slice(-4) : '5412',
       trackingEvents: [
         {
           id: `evt_init_1`,
           status: 'Order Placed',
-          location: 'Aura Artisan Atelier, San Francisco',
-          timestamp: 'Just now',
-          description: 'Payment authorized via 3D Secure gateway. Handcrafting queued.',
+          location: 'Bengaluru Atelier',
+          timestamp: 'Just now (' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ')',
+          description: `Order confirmed via ${details.paymentMethod}. Artisan crafting scheduled.`,
           completed: true,
           current: true,
         },
         {
           id: `evt_init_2`,
           status: 'Artisan Crafting & Gift Wrapping',
-          location: 'Master Atelier Studio',
+          location: 'Aura Master Craft Studio',
           timestamp: 'Scheduled today',
-          description: 'Custom velvet box preparation & wax-sealed calligraphy card.',
+          description: 'Handcrafted floral arrangement, delicate wrapping & personalized gift message.',
           completed: false,
           current: false,
         },
         {
           id: `evt_init_3`,
           status: 'Dispatched from Atelier',
-          location: 'San Francisco Express Hub',
-          timestamp: 'Scheduled tomorrow morning',
-          description: 'Carrier pickup with insured temperature-controlled transit.',
+          location: 'Blue Dart Hub, Bengaluru',
+          timestamp: 'Scheduled next morning',
+          description: 'Courier barcode scanned. Insured transit in progress.',
           completed: false,
           current: false,
         },
         {
           id: `evt_init_4`,
           status: 'In Transit',
-          location: 'Regional Logistics Center',
-          timestamp: 'Pending dispatch',
-          description: 'Transit vehicle scan.',
+          location: `${fullShippingAddress.city} Logistics Center`,
+          timestamp: 'Pending transit',
+          description: 'Transit scan at regional destination hub.',
           completed: false,
           current: false,
         },
         {
           id: `evt_init_5`,
           status: 'Out for Delivery',
-          location: 'Local Delivery Station',
-          timestamp: 'Pending transit',
-          description: 'Courier route assigned.',
+          location: `${fullShippingAddress.city} Local Hub`,
+          timestamp: `Scheduled for ${details.deliverySlot || selectedDeliverySlot}`,
+          description: 'Delivery associate out on assigned route.',
           completed: false,
           current: false,
         },
         {
           id: `evt_init_6`,
           status: 'Delivered',
-          location: `${details.shippingAddress.street}, ${details.shippingAddress.city}`,
+          location: `${fullShippingAddress.flatNo || ''} ${fullShippingAddress.city}`,
           timestamp: 'Pending delivery',
-          description: 'Signature on arrival.',
+          description: 'Handed directly to recipient with OTP confirmation.',
           completed: false,
           current: false,
         },
@@ -881,10 +1047,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     }
 
-    // Push notification for order confirmation
+    addSecurityLog(`Order Placed: #${orderNum} (${details.paymentMethod})`, 'Authorized');
+
     sendPushNotification(
       `Order Confirmed #${orderNum}`,
-      `Thank you for your order! Your handcrafted gift has been queued for artisan packaging. You earned +${pointsEarned} loyalty points!`,
+      `Thank you! Handcrafting queued. Delivery slot: ${details.deliverySlot || selectedDeliverySlot}.`,
       'shipment',
       { orderId: newOrder.id }
     );
@@ -1004,6 +1171,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setSelectedCategory,
         searchQuery,
         setSearchQuery,
+        formatPrice,
+
+        wishlist,
+        isWishlistOpen,
+        setIsWishlistOpen,
+        toggleWishlist,
+        removeFromWishlist,
+        isInWishlist,
 
         cart,
         isCartOpen,
@@ -1016,6 +1191,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         cartDiscount,
         cartTotal,
 
+        deliveryPincode,
+        setDeliveryPincode,
+        selectedDeliverySlot,
+        setSelectedDeliverySlot,
+        deliveryDate,
+        setDeliveryDate,
+        checkPincode,
+
         orders,
         activeTrackingOrder,
         setActiveTrackingOrder,
@@ -1024,6 +1207,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         loyaltyRewards,
         activeCoupon,
+        appliedCoupon,
+        availableCoupons,
         applyCoupon,
         removeCoupon,
         redeemReward,
